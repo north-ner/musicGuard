@@ -4,6 +4,15 @@
 
 The plugin template is meant to be used as a starting point for OBS Studio plugin development. It includes:
 
+
+git clone https://github.com/north-ner/musicGuard.git
+cd musicGuard
+
+cmake -S . -B build -DENABLE_FRONTEND_API=ON
+cmake --build build --config Release
+
+
+
 * Boilerplate plugin source code
 * A CMake project file
 * GitHub Actions workflows and repository actions
