@@ -118,6 +118,9 @@ static struct obs_audio_data *musicguard_filter_audio(
         return audio;
 
     bool detected = music_detect(audio);
+    if (detected) {
+        blog(LOG_INFO, "[MusicGuard] Non-voice audio detected → Ducking");
+    }
     uint64_t now = os_gettime_ns();
 
     /* If music detected, reset hold timer */
