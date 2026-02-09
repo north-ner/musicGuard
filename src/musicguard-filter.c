@@ -12,13 +12,40 @@ typedef struct musicguard_state {
     obs_source_t *source;
 
     overlay_state_t *overlay;
-
     ducking_state_t duck;
 
     bool music_active;
     uint64_t last_music_time;
 
+    /* User configurable */
+    float duck_level;
+
 } musicguard_state_t;
+
+/* ---------------- OBS UI ---------------- */
+
+static obs_properties_t *musicguard_properties(void *data)
+{
+    UNUSED_PARAMETER(data);
+
+    obs_properties_t *props = obs_properties_create();
+
+    obs_properties_add_float_slider(
+        props,
+        "duck_level",
+        "Ducking Strength (lower = quieter)",
+        0.01, 0.50,
+        0.01);
+
+    return props;
+}
+
+static void musicguard_defaults(obs_data_t *settings)
+{
+    obs_data_set_default_double(settings, "duck_level", 0.05);
+}
+
+/* ---------------- Filter Core ---------------- */
 
 static const char *musicguard_get_name(void *unused)
 {
@@ -28,8 +55,6 @@ static const char *musicguard_get_name(void *unused)
 
 static void *musicguard_create(obs_data_t *settings, obs_source_t *source)
 {
-    UNUSED_PARAMETER(settings);
-
     musicguard_state_t *st =
         calloc(1, sizeof(musicguard_state_t));
 
@@ -41,9 +66,24 @@ static void *musicguard_create(obs_data_t *settings, obs_source_t *source)
     st->music_active = false;
     st->last_music_time = 0;
 
-    blog(LOG_INFO, "[MusicGuard] Filter instance created.");
+    st->duck_level = (float)obs_data_get_double(settings, "duck_level");
+
+    blog(LOG_INFO,
+         "[MusicGuard] Filter created (duck_level=%.2f)",
+         st->duck_level);
 
     return st;
+}
+
+static void musicguard_update(void *data, obs_data_t *settings)
+{
+    musicguard_state_t *st = data;
+
+    st->duck_level = (float)obs_data_get_double(settings, "duck_level");
+
+    blog(LOG_INFO,
+         "[MusicGuard] Updated duck_level=%.2f",
+         st->duck_level);
 }
 
 static void musicguard_destroy(void *data)
@@ -53,8 +93,6 @@ static void musicguard_destroy(void *data)
         return;
 
     overlay_destroy(st->overlay);
-
-    blog(LOG_INFO, "[MusicGuard] Filter instance destroyed.");
     free(st);
 }
 
@@ -74,15 +112,18 @@ static struct obs_audio_data *musicguard_filter_audio(
         overlay_set_active(st->overlay, true);
     }
 
-    /* HOLD logic: stay active for 2s after detection */
     st->music_active =
         (now - st->last_music_time < HOLD_NS);
 
-    /* Smooth ducking */
-    ducking_process(&st->duck, audio, st->music_active);
+    /* Smooth ducking with user-defined target */
+    ducking_process(&st->duck, audio,
+                    st->music_active,
+                    st->duck_level);
 
     return audio;
 }
+
+/* ---------------- Registration ---------------- */
 
 static struct obs_source_info musicguard_filter_info = {
     .id = "musicguard_filter",
@@ -90,8 +131,14 @@ static struct obs_source_info musicguard_filter_info = {
     .output_flags = OBS_SOURCE_AUDIO,
 
     .get_name = musicguard_get_name,
+
     .create = musicguard_create,
     .destroy = musicguard_destroy,
+    .update = musicguard_update,
+
+    .get_properties = musicguard_properties,
+    .get_defaults = musicguard_defaults,
+
     .filter_audio = musicguard_filter_audio,
 };
 

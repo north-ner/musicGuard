@@ -8,7 +8,7 @@ typedef struct ducking_state {
 
 void ducking_init(ducking_state_t *d);
 
-/* Smooth gain update */
 void ducking_process(ducking_state_t *d,
                      struct obs_audio_data *audio,
-                     bool music_active);
+                     bool music_active,
+                     float target_gain);
