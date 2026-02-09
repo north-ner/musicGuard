@@ -17,8 +17,8 @@ typedef struct musicguard_state {
     bool music_active;
     uint64_t last_music_time;
 
-    /* User configurable */
-    float duck_level;
+    /* User configurable attenuation in dB */
+    float attenuation_db;
 
 } musicguard_state_t;
 
@@ -30,19 +30,26 @@ static obs_properties_t *musicguard_properties(void *data)
 
     obs_properties_t *props = obs_properties_create();
 
+    /*
+     * Attenuation slider:
+     * -5 dB  = mild duck
+     * -20 dB = strong duck
+     * -35 dB = almost mute
+     */
     obs_properties_add_float_slider(
         props,
-        "duck_level",
-        "Ducking Strength (lower = quieter)",
-        0.01, 0.50,
-        0.01);
+        "attenuation_db",
+        "Music Attenuation (dB)  (more negative = quieter)",
+        -40.0, -5.0,
+        1.0);
 
     return props;
 }
 
 static void musicguard_defaults(obs_data_t *settings)
 {
-    obs_data_set_default_double(settings, "duck_level", 0.05);
+    /* Default: -25 dB (music becomes barely audible) */
+    obs_data_set_default_double(settings, "attenuation_db", -25.0);
 }
 
 /* ---------------- Filter Core ---------------- */
@@ -66,11 +73,13 @@ static void *musicguard_create(obs_data_t *settings, obs_source_t *source)
     st->music_active = false;
     st->last_music_time = 0;
 
-    st->duck_level = (float)obs_data_get_double(settings, "duck_level");
+    /* Load attenuation from settings */
+    st->attenuation_db =
+        (float)obs_data_get_double(settings, "attenuation_db");
 
     blog(LOG_INFO,
-         "[MusicGuard] Filter created (duck_level=%.2f)",
-         st->duck_level);
+         "[MusicGuard] Filter created (attenuation=%.1f dB)",
+         st->attenuation_db);
 
     return st;
 }
@@ -79,11 +88,12 @@ static void musicguard_update(void *data, obs_data_t *settings)
 {
     musicguard_state_t *st = data;
 
-    st->duck_level = (float)obs_data_get_double(settings, "duck_level");
+    st->attenuation_db =
+        (float)obs_data_get_double(settings, "attenuation_db");
 
     blog(LOG_INFO,
-         "[MusicGuard] Updated duck_level=%.2f",
-         st->duck_level);
+         "[MusicGuard] Updated attenuation=%.1f dB",
+         st->attenuation_db);
 }
 
 static void musicguard_destroy(void *data)
@@ -93,6 +103,9 @@ static void musicguard_destroy(void *data)
         return;
 
     overlay_destroy(st->overlay);
+
+    blog(LOG_INFO, "[MusicGuard] Filter destroyed.");
+
     free(st);
 }
 
@@ -107,18 +120,21 @@ static struct obs_audio_data *musicguard_filter_audio(
     bool detected = music_detect(audio);
     uint64_t now = os_gettime_ns();
 
+    /* If music detected, reset hold timer */
     if (detected) {
         st->last_music_time = now;
         overlay_set_active(st->overlay, true);
     }
 
+    /* HOLD logic: keep ducking active for 2 seconds */
     st->music_active =
         (now - st->last_music_time < HOLD_NS);
 
-    /* Smooth ducking with user-defined target */
-    ducking_process(&st->duck, audio,
-                    st->music_active,
-                    st->duck_level);
+    /* Smooth ducking in decibels */
+    ducking_process_db(&st->duck,
+                       audio,
+                       st->music_active,
+                       st->attenuation_db);
 
     return audio;
 }
