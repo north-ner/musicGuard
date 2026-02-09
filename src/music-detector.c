@@ -16,10 +16,8 @@ bool music_detect(struct obs_audio_data *audio)
         energy += (s * s);
     }
 
-    energy /= frames;
+    energy /= (double)frames;
 
-    /* Enterprise threshold:
-       speech ~ low variance
-       music ~ sustained energy */
+    /* Conservative threshold */
     return (energy > 0.0025);
 }

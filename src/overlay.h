@@ -1,13 +1,19 @@
 #pragma once
-#include <obs-module.h>
+#include <stdbool.h>
 
-#define OVERLAY_NAME "MusicGuard Warning Overlay"
+/*
+ * Overlay system (Safe Mode)
+ *
+ * OBS UI/text sources are NOT thread-safe.
+ * So in v1, overlay is log-only and state-based.
+ */
 
-struct overlay_state {
-    obs_source_t *text_source;
-};
+typedef struct overlay_state {
+    bool active;
+} overlay_state_t;
 
-void overlay_init(struct overlay_state *ov);
-void overlay_show(struct overlay_state *ov);
-void overlay_hide(struct overlay_state *ov);
-void overlay_shutdown(struct overlay_state *ov);
+overlay_state_t *overlay_create(void);
+void overlay_destroy(overlay_state_t *ov);
+
+void overlay_set_active(overlay_state_t *ov, bool active);
+bool overlay_is_active(overlay_state_t *ov);

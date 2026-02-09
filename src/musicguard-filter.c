@@ -4,35 +4,42 @@
 #include "overlay.h"
 
 #include <util/platform.h>
+#include <stdlib.h>
 
-#define MUSIC_COOLDOWN_NS (3ULL * 1000000000ULL)
+#define HOLD_NS (2ULL * 1000000000ULL)
 
-struct musicguard_state {
+typedef struct musicguard_state {
     obs_source_t *source;
-    struct overlay_state overlay;
+
+    overlay_state_t *overlay;
+
+    ducking_state_t duck;
 
     bool music_active;
     uint64_t last_music_time;
-};
+
+} musicguard_state_t;
 
 static const char *musicguard_get_name(void *unused)
 {
     UNUSED_PARAMETER(unused);
-    return "MusicGuard (Music Ducking + Overlay)";
+    return "MusicGuard (Stable Ducking Filter)";
 }
 
 static void *musicguard_create(obs_data_t *settings, obs_source_t *source)
 {
     UNUSED_PARAMETER(settings);
 
-    struct musicguard_state *st =
-        bzalloc(sizeof(struct musicguard_state));
+    musicguard_state_t *st =
+        calloc(1, sizeof(musicguard_state_t));
 
     st->source = source;
+    st->overlay = overlay_create();
+
+    ducking_init(&st->duck);
+
     st->music_active = false;
     st->last_music_time = 0;
-
-    overlay_init(&st->overlay);
 
     blog(LOG_INFO, "[MusicGuard] Filter instance created.");
 
@@ -41,59 +48,40 @@ static void *musicguard_create(obs_data_t *settings, obs_source_t *source)
 
 static void musicguard_destroy(void *data)
 {
-    struct musicguard_state *st = data;
-    overlay_shutdown(&st->overlay);
-    bfree(st);
+    musicguard_state_t *st = data;
+    if (!st)
+        return;
 
-    blog(LOG_INFO, "[MusicGuard] Filter destroyed.");
+    overlay_destroy(st->overlay);
+
+    blog(LOG_INFO, "[MusicGuard] Filter instance destroyed.");
+    free(st);
 }
 
 static struct obs_audio_data *musicguard_filter_audio(
     void *data,
     struct obs_audio_data *audio)
 {
-    struct musicguard_state *st = data;
-
-    if (!audio)
+    musicguard_state_t *st = data;
+    if (!st || !audio)
         return audio;
 
     bool detected = music_detect(audio);
-
     uint64_t now = os_gettime_ns();
 
     if (detected) {
-        st->music_active = true;
         st->last_music_time = now;
-
-        ducking_apply(audio);
-
-        overlay_show(&st->overlay);
-
-    } else {
-        if (st->music_active &&
-            (now - st->last_music_time > MUSIC_COOLDOWN_NS)) {
-
-            st->music_active = false;
-            overlay_hide(&st->overlay);
-        }
+        overlay_set_active(st->overlay, true);
     }
 
+    /* HOLD logic: stay active for 2s after detection */
+    st->music_active =
+        (now - st->last_music_time < HOLD_NS);
+
+    /* Smooth ducking */
+    ducking_process(&st->duck, audio, st->music_active);
+
     return audio;
-}
-
-static obs_properties_t *musicguard_properties(void *data)
-{
-    UNUSED_PARAMETER(data);
-
-    obs_properties_t *props = obs_properties_create();
-
-    obs_properties_add_text(
-        props,
-        "info",
-        "MusicGuard Status",
-        OBS_TEXT_INFO);
-
-    return props;
 }
 
 static struct obs_source_info musicguard_filter_info = {
@@ -105,10 +93,12 @@ static struct obs_source_info musicguard_filter_info = {
     .create = musicguard_create,
     .destroy = musicguard_destroy,
     .filter_audio = musicguard_filter_audio,
-    .get_properties = musicguard_properties,
 };
 
 void musicguard_register_filter(void)
 {
     obs_register_source(&musicguard_filter_info);
+
+    blog(LOG_INFO,
+         "[MusicGuard] Filter registered successfully.");
 }

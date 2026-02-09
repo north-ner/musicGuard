@@ -17,18 +17,28 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include <obs-module.h>
-#include <plugin-support.h>
+#include "musicguard-filter.h"
 
 OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
+OBS_MODULE_USE_DEFAULT_LOCALE("musicguard", "en-US")
+
+MODULE_EXPORT const char *obs_module_description(void)
+{
+    return "MusicGuard — Safe music detection + ducking filter.";
+}
 
 bool obs_module_load(void)
 {
-	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
-	return true;
+    blog(LOG_INFO, "[MusicGuard] Plugin loaded successfully.");
+
+    musicguard_register_filter();
+
+    return true;
 }
 
 void obs_module_unload(void)
 {
-	obs_log(LOG_INFO, "plugin unloaded");
+    blog(LOG_INFO, "[MusicGuard] Plugin unloaded.");
 }
+
+
